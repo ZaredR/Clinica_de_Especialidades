@@ -1,136 +1,190 @@
 ```mermaid
-erDiagram
-    ROL {
-        int id_rol PK
-        varchar descripcion
-    }
-    
-    USUARIOS {
-        int id_usuario PK
-        varchar username
-        varchar password
-        int id_rol FK
-    }
-    
-    TIPO_CONSULTA {
-        int id_tipo_consulta PK
-        varchar descripcion
-        decimal costo
-    }
-    
-    PACIENTE {
-        int id_paciente PK
-        varchar nombre
-        varchar apellido
-        date fecha_nacimiento
-        varchar sexo
-        varchar telefono
-        varchar correo
-        int id_usuario FK
-    }
-    
-    MEDICO {
-        int id_medico PK
-        varchar nombre
-        varchar apellido
-        varchar telefono
-        varchar correo
-        varchar cedula
-        time horario_inicio
-        time horario_fin
-        int id_usuario FK
-    }
-    
-    CONSULTORIO {
-        int id_consultorio PK
-        varchar numero
-        int piso
-    }
-    
-    CITA {
-        int id_cita PK
-        date fecha
-        time hora
-        varchar estado
-        int id_paciente FK
-        int id_medico FK
-        int id_consultorio FK
-    }
-    
-    CONSULTA {
-        int id_consulta PK
-        text diagnostico
-        text observaciones
-        int id_cita FK
-        int id_tipo_consulta FK
-    }
-    
-    PAGO {
-        int id_pago PK
-        date fecha
-        decimal monto_total
-        varchar estado
-    }
-    
-    DETALLE_PAGO {
-        int id_detalle PK
-        int id_consulta FK
-        int id_pago FK
-    }
-    
-    RECETA {
-        int id_receta PK
-        int id_consulta FK
-    }
-    
-    MEDICAMENTO {
-        int id_medicamento PK
-        varchar nombre
-        varchar descripcion
-        decimal precio
-    }
-    
-    DETALLE_RECETA {
-        int id_receta PK_FK
-        int id_medicamento PK_FK
-        varchar dosis
-        varchar duracion
-    }
-    
-    EXAMEN {
-        int id_examen PK
-        varchar nombre
-        varchar descripcion
-        int id_tipo_examen FK
-    }
-    
-    TIPO_EXAMEN {
-        int id_tipo_examen PK
-        varchar descripcion
-    }
-    
-    ORDEN_EXAMEN {
-        int id_orden PK
-        int id_consulta FK
-        int id_examen FK
-        varchar indicaciones
-    }
 
-    %% Relaciones
-    ROL ||--o{ USUARIOS : "tiene"
-    USUARIOS ||--o| PACIENTE : "es"
-    USUARIOS ||--o| MEDICO : "es"
-    PACIENTE ||--o{ CITA : "agenda"
-    MEDICO ||--o{ CITA : "atiende"
-    CONSULTORIO ||--o{ CITA : "asigna"
-    CITA ||--o| CONSULTA : "genera"
-    TIPO_CONSULTA ||--o{ CONSULTA : "define"
-    CONSULTA ||--o{ DETALLE_PAGO : "genera"
-    PAGO ||--o{ DETALLE_PAGO : "incluye"
-    CONSULTA ||--o| RECETA : "emite"
-    RECETA ||--o{ DETALLE_RECETA : "contiene"
-    MEDICAMENTO ||--o{ DETALLE_RECETA : "incluye"
-    CONSULTA ||--o{ ORDEN_EXAMEN : "requiere"
-    EXAMEN ||--o{ ORDEN_EXAMEN : "incluye"
-    TIPO_EXAMEN ||--o{ EXAMEN : "clasifica"
-```
+erDiagram
+	direction TB
+	ROLES {
+		int id_rol PK ""  
+		string descripcion  ""  
+	}
+
+	USUARIOS {
+		int id_usuario PK ""  
+		string username  ""  
+		string contrasena  ""  
+		int id_rol FK ""  
+	}
+
+	ESPECIALIDADES {
+		int id_especialidad PK ""  
+		string nombre  ""  
+	}
+
+	MEDICO_ESPECIALIDAD {
+		int id_medico FK ""  
+		int id_especialidad FK ""  
+	}
+
+	TIPO_SANGRE {
+		int id_tipo_sangre PK ""  
+		string descripcion  ""  
+	}
+
+	EXPEDIENTES {
+		int id_expediente PK ""  
+		int id_paciente FK ""  
+		int id_tipo_sangre FK ""  
+		date fecha_apertura  ""  
+		float peso_actual  ""  
+		float altura  ""  
+		string observaciones_generales  ""  
+	}
+
+	ALERGIAS {
+		int id_alergia PK ""  
+		string descripcion  ""  
+	}
+
+	EXPEDIENTE_ALERGIA {
+		int id_expediente FK ""  
+		int id_alergia FK ""  
+	}
+
+	ENFERMEDADES_CRONICAS {
+		int id_enfermedad PK ""  
+		string descripcion  ""  
+	}
+
+	EXPEDIENTE_ENFERMEDAD {
+		int id_expediente FK ""  
+		int id_enfermedad FK ""  
+	}
+
+	TIPO_CONSULTA {
+		int id_tipo_consulta PK ""  
+		string descripcion  ""  
+		float precio  ""  
+	}
+
+	CONSULTORIOS {
+		int id_consultorio PK ""  
+		string numero  ""  
+		string piso  ""  
+	}
+
+	CONSULTAS {
+		int id_consulta PK ""  
+		int id_cita FK ""  
+		int id_tipo_consulta FK ""  
+		int id_consultorio FK ""  
+		string observaciones  ""  
+	}
+
+	RECETAS {
+		int id_receta PK ""  
+		int id_consulta FK ""  
+	}
+
+	MEDICAMENTOS {
+		int id_medicamento PK ""  
+		string nombre  ""  
+		string descripcion  ""  
+		float precio  ""  
+		int stock  ""  
+		date fecha_caducidad  ""  
+	}
+
+	RECETA_MEDICAMENTO {
+		int id_receta FK ""  
+		int id_medicamento FK ""  
+		string frecuencia  ""  
+		string duracion  ""  
+	}
+
+	TIPO_MOVIMIENTO {
+		int id_tipo PK ""  
+		string descripcion  ""  
+	}
+
+	PACIENTES {
+		int id_paciente PK ""  
+		int id_usuario FK ""  
+		string nombre  ""  
+		string apellido_paterno  ""  
+		string apellido_materno  ""  
+		date fecha_nacimiento  ""  
+		int edad  ""  
+		string sexo  ""  
+		string telefono  ""  
+		string correo  ""  
+	}
+
+	MEDICOS {
+		int id_medico PK ""  
+		int id_usuario FK ""  
+		string nombre  ""  
+		string apellido_paterno  ""  
+		string apellido_materno  ""  
+		string cedula  ""  
+		date fecha_nacimiento  ""  
+		int edad  ""  
+		string telefono  ""  
+		string correo  ""  
+	}
+
+	CITAS {
+		int id_cita PK ""  
+		int id_paciente FK ""  
+		int id_medico FK ""  
+		int id_consultorio FK ""  
+		date fecha  ""  
+		time hora  ""  
+		string estado  ""  
+	}
+
+	PAGOS {
+		int id_pago PK ""  
+		int id_consulta FK ""  
+		float monto_total  ""  
+		float subtotal  ""  
+		string estado  ""  
+		date fecha  ""  
+	}
+
+	MOVIMIENTO_MEDICAMENTO {
+		int id_movimiento PK ""  
+		int id_medicamento FK ""  
+		int id_tipo FK ""  
+		int cantidad  ""  
+		date fecha  ""  
+		time hora  ""  
+	}
+
+	PAGOS_MEDICAMENTOS {
+		int id_pago FK ""  
+		int id_medicamento FK ""  
+	}
+
+	ROLES||--|{USUARIOS:"tiene"
+	USUARIOS||--o|MEDICOS:"perfil_de"
+	USUARIOS||--o|PACIENTES:"perfil_de"
+	MEDICOS||--o{MEDICO_ESPECIALIDAD:"posee"
+	ESPECIALIDADES||--o{MEDICO_ESPECIALIDAD:"clasifica"
+	PACIENTES||--|{EXPEDIENTES:"tiene"
+	TIPO_SANGRE||--o{EXPEDIENTES:"define"
+	EXPEDIENTES||--o{EXPEDIENTE_ALERGIA:"registra"
+	ALERGIAS||--o{EXPEDIENTE_ALERGIA:"es_padecida"
+	EXPEDIENTES||--o{EXPEDIENTE_ENFERMEDAD:"registra"
+	ENFERMEDADES_CRONICAS||--o{EXPEDIENTE_ENFERMEDAD:"es_padecida"
+	PACIENTES||--o{CITAS:"agenda"
+	MEDICOS||--o{CITAS:"atiende"
+	CITAS||--||CONSULTAS:"genera"
+	TIPO_CONSULTA||--o{CONSULTAS:"categoriza"
+	CONSULTAS||--||PAGOS:"genera"
+	CONSULTAS||--o|RECETAS:"produce"
+	RECETAS||--o{RECETA_MEDICAMENTO:"incluye"
+	MEDICAMENTOS||--o{RECETA_MEDICAMENTO:"es_prescrito"
+	MEDICAMENTOS||--|{MOVIMIENTO_MEDICAMENTO:"sufre"
+	TIPO_MOVIMIENTO||--|{MOVIMIENTO_MEDICAMENTO:"tipifica"
+	CONSULTORIOS||--o{CITAS:"  "
+	PAGOS||--o{PAGOS_MEDICAMENTOS:"  "
+	PAGOS_MEDICAMENTOS}o--||MEDICAMENTOS:"  "
