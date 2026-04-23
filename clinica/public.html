@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clínica de Especialidades</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=Playfair+Display:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f4f6f9;--sidebar:#0f1b2d;--sidebar-accent:#1a2e47;
+  --accent:#2d7dd2;--accent-light:#e8f2fc;--accent-dark:#1a5fa8;
+  --success:#16a34a;--warning:#d97706;--danger:#dc2626;
+  --text:#1a202c;--text-muted:#6b7280;--border:#e2e8f0;
+  --card:#ffffff;--radius:12px;--shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.06);
+  --shadow-lg:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -2px rgba(0,0,0,.05);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;}
+h1,h2,h3{font-family:'Playfair Display',serif;}
+
+/* ── Sidebar ── */
+#sidebar{
+  width:260px;min-height:100vh;background:var(--sidebar);
+  display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100;
+  transition:transform .3s;
+}
+.sidebar-logo{
+  padding:28px 24px 20px;border-bottom:1px solid rgba(255,255,255,.08);
+}
+.sidebar-logo h2{color:#fff;font-size:1.15rem;letter-spacing:-.01em;}
+.sidebar-logo span{color:var(--accent);font-size:.78rem;display:block;margin-top:2px;font-family:'DM Sans',sans-serif;font-weight:400;}
+.sidebar-user{
+  padding:16px 24px;border-bottom:1px solid rgba(255,255,255,.08);
+  display:flex;align-items:center;gap:12px;
+}
+.user-avatar{
+  width:38px;height:38px;border-radius:50%;background:var(--accent);
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-weight:600;font-size:.9rem;flex-shrink:0;
+}
+.user-info{flex:1;min-width:0;}
+.user-info strong{color:#fff;font-size:.85rem;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.user-info small{color:rgba(255,255,255,.5);font-size:.72rem;}
+nav{flex:1;overflow-y:auto;padding:12px 0;}
+.nav-section{padding:10px 24px 4px;color:rgba(255,255,255,.35);font-size:.68rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;}
+.nav-item{
+  display:flex;align-items:center;gap:12px;padding:10px 24px;
+  color:rgba(255,255,255,.65);cursor:pointer;transition:all .15s;
+  border-left:3px solid transparent;text-decoration:none;font-size:.88rem;
+}
+.nav-item:hover{color:#fff;background:rgba(255,255,255,.06);}
+.nav-item.active{color:#fff;background:rgba(45,125,210,.2);border-left-color:var(--accent);}
+.nav-item svg{flex-shrink:0;opacity:.7;}
+.nav-item.active svg{opacity:1;}
+.sidebar-footer{padding:20px 24px;border-top:1px solid rgba(255,255,255,.08);}
+.btn-logout{
+  width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+  background:transparent;color:rgba(255,255,255,.6);font-size:.83rem;cursor:pointer;
+  font-family:'DM Sans',sans-serif;transition:all .15s;
+}
+.btn-logout:hover{background:rgba(220,38,38,.15);border-color:rgba(220,38,38,.4);color:#fca5a5;}
+
+/* ── Main ── */
+#main{margin-left:260px;flex:1;display:flex;flex-direction:column;min-height:100vh;}
+#topbar{
+  background:var(--card);border-bottom:1px solid var(--border);
+  padding:0 32px;height:64px;display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:50;
+}
+.topbar-title{font-size:1.1rem;font-weight:500;}
+.topbar-right{display:flex;align-items:center;gap:12px;}
+#content{padding:32px;flex:1;}
+
+/* ── Cards ── */
+.card{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow);}
+.card-header{padding:20px 24px 0;display:flex;align-items:center;justify-content:space-between;}
+.card-body{padding:24px;}
+.card-title{font-size:1rem;font-weight:600;}
+
+/* ── Stats ── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:28px;}
+.stat-card{
+  background:var(--card);border-radius:var(--radius);border:1px solid var(--border);
+  padding:20px 24px;box-shadow:var(--shadow);
+}
+.stat-label{font-size:.78rem;color:var(--text-muted);font-weight:500;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;}
+.stat-value{font-size:2rem;font-weight:600;font-family:'Playfair Display',serif;line-height:1;}
+.stat-sub{font-size:.78rem;color:var(--text-muted);margin-top:4px;}
+.stat-icon{
+  width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  margin-bottom:12px;
+}
+.si-blue{background:var(--accent-light);color:var(--accent);}
+.si-green{background:#dcfce7;color:var(--success);}
+.si-amber{background:#fef3c7;color:var(--warning);}
+.si-red{background:#fee2e2;color:var(--danger);}
+
+/* ── Tables ── */
+.table-wrapper{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;font-size:.875rem;}
+th{text-align:left;padding:10px 16px;background:#f8fafc;color:var(--text-muted);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);}
+td{padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:#f8fafc;}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;border-radius:8px;border:none;font-family:'DM Sans',sans-serif;font-size:.85rem;font-weight:500;cursor:pointer;transition:all .15s;text-decoration:none;}
+.btn-primary{background:var(--accent);color:#fff;}
+.btn-primary:hover{background:var(--accent-dark);}
+.btn-secondary{background:transparent;border:1px solid var(--border);color:var(--text);}
+.btn-secondary:hover{background:var(--bg);}
+.btn-success{background:var(--success);color:#fff;}
+.btn-danger{background:var(--danger);color:#fff;}
+.btn-warning{background:var(--warning);color:#fff;}
+.btn-sm{padding:6px 12px;font-size:.78rem;}
+.btn-icon{width:34px;height:34px;padding:0;justify-content:center;}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:.72rem;font-weight:600;}
+.badge-blue{background:var(--accent-light);color:var(--accent);}
+.badge-green{background:#dcfce7;color:var(--success);}
+.badge-amber{background:#fef3c7;color:#92400e;}
+.badge-red{background:#fee2e2;color:var(--danger);}
+.badge-gray{background:#f1f5f9;color:var(--text-muted);}
+
+/* ── Forms ── */
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;}
+.form-group{display:flex;flex-direction:column;gap:6px;}
+.form-group.full{grid-column:1/-1;}
+label{font-size:.8rem;font-weight:500;color:var(--text);}
+input,select,textarea{
+  padding:9px 12px;border:1px solid var(--border);border-radius:8px;
+  font-family:'DM Sans',sans-serif;font-size:.875rem;color:var(--text);
+  background:#fff;transition:border .15s;outline:none;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(45,125,210,.1);}
+textarea{resize:vertical;min-height:80px;}
+
+/* ── Modal ── */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;
+  display:none;align-items:center;justify-content:center;padding:20px;
+}
+.modal-overlay.open{display:flex;}
+.modal{background:#fff;border-radius:16px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-lg);}
+.modal-header{padding:24px 28px 0;display:flex;align-items:center;justify-content:space-between;}
+.modal-header h3{font-size:1.1rem;}
+.modal-close{background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-muted);line-height:1;}
+.modal-body{padding:24px 28px;}
+.modal-footer{padding:0 28px 24px;display:flex;justify-content:flex-end;gap:10px;}
+
+/* ── Search bar ── */
+.search-bar{position:relative;flex:1;max-width:340px;}
+.search-bar input{width:100%;padding-left:38px;}
+.search-bar svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);}
+
+/* ── Login page ── */
+#login-page{
+  min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,var(--sidebar) 0%,var(--accent-dark) 100%);
+}
+.login-card{background:#fff;border-radius:20px;padding:48px 44px;width:100%;max-width:420px;box-shadow:0 25px 50px rgba(0,0,0,.25);}
+.login-logo{text-align:center;margin-bottom:32px;}
+.login-logo h1{font-size:1.6rem;margin-top:12px;}
+.login-logo p{color:var(--text-muted);font-size:.875rem;margin-top:4px;}
+.login-card .form-group{margin-bottom:16px;}
+.login-btn{width:100%;padding:12px;font-size:.95rem;margin-top:8px;}
+.login-err{background:#fee2e2;color:var(--danger);padding:10px 14px;border-radius:8px;font-size:.83rem;margin-bottom:12px;display:none;}
+
+/* ── Alerts ── */
+.alert{padding:12px 16px;border-radius:8px;font-size:.85rem;margin-bottom:16px;}
+.alert-success{background:#dcfce7;color:var(--success);border:1px solid #bbf7d0;}
+.alert-danger{background:#fee2e2;color:var(--danger);border:1px solid #fecaca;}
+.alert-warning{background:#fef3c7;color:#92400e;border:1px solid #fde68a;}
+
+/* ── Empty state ── */
+.empty-state{text-align:center;padding:60px 20px;color:var(--text-muted);}
+.empty-state svg{margin-bottom:16px;opacity:.4;}
+.empty-state p{font-size:.9rem;}
+
+/* ── Loader ── */
+.loader{display:inline-block;width:20px;height:20px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.loading-overlay{position:fixed;inset:0;background:rgba(255,255,255,.7);z-index:500;display:none;align-items:center;justify-content:center;}
+.loading-overlay.show{display:flex;}
+.loading-spinner{width:42px;height:42px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;}
+
+/* ── Responsive ── */
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%);}
+  #sidebar.open{transform:translateX(0);}
+  #main{margin-left:0;}
+}
+</style>
+</head>
+<body>
+
+<!-- ══ LOADER ═════════════════════════════════════════ -->
+<div class="loading-overlay" id="loader"><div class="loading-spinner"></div></div>
+
+<!-- ══ LOGIN ══════════════════════════════════════════ -->
+<div id="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+        <rect width="48" height="48" rx="14" fill="#2d7dd2"/>
+        <path d="M24 10v28M10 24h28" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      </svg>
+      <h1>Clínica de Especialidades</h1>
+      <p>Sistema de Gestión Médica</p>
+    </div>
+    <div class="login-err" id="login-err"></div>
+    <div class="form-group">
+      <label>Usuario</label>
+      <input type="text" id="inp-username" placeholder="usuario" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>Contraseña</label>
+      <input type="password" id="inp-password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary login-btn" id="btn-login">Iniciar sesión</button>
+  </div>
+</div>
+
+<!-- ══ APP (oculta hasta login) ══════════════════════ -->
+<div id="app" style="display:none;width:100%;display:none;">
+
+<!-- SIDEBAR -->
+<aside id="sidebar">
+  <div class="sidebar-logo">
+    <h2>&#x2695; Clínica</h2>
+    <span>Sistema de Especialidades</span>
+  </div>
+  <div class="sidebar-user">
+    <div class="user-avatar" id="sidebar-avatar">A</div>
+    <div class="user-info">
+      <strong id="sidebar-username">Admin</strong>
+      <small id="sidebar-rol">Administrador</small>
+    </div>
+  </div>
+  <nav>
+    <div class="nav-section">Principal</div>
+    <a class="nav-item active" data-page="dashboard">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Dashboard
+    </a>
+    <div class="nav-section">Atención</div>
+    <a class="nav-item" data-page="medicos">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Médicos
+    </a>
+    <a class="nav-item" data-page="pacientes">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      Pacientes
+    </a>
+    <a class="nav-item" data-page="citas">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+      Agenda de Citas
+    </a>
+    <a class="nav-item" data-page="consultas">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12h6M9 16h6M17 3H7a2 2 0 00-2 2v16l3-3 2 3 2-3 2 3 2-3 3 3V5a2 2 0 00-2-2z"/></svg>
+      Consultas
+    </a>
+    <div class="nav-section">Farmacia</div>
+    <a class="nav-item" data-page="medicamentos">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2z"/><path d="M12 8v8M8 12h8"/></svg>
+      Inventario
+    </a>
+    <div class="nav-section">Administración</div>
+    <a class="nav-item" data-page="pagos">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+      Pagos
+    </a>
+    <a class="nav-item" data-page="reportes">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+      Reportes
+    </a>
+    <a class="nav-item" data-page="catalogos">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+      Catálogos
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <button class="btn-logout" id="btn-logout">Cerrar sesión</button>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div id="main">
+  <header id="topbar">
+    <span class="topbar-title" id="page-title">Dashboard</span>
+    <div class="topbar-right" id="topbar-actions"></div>
+  </header>
+  <main id="content"></main>
+</div>
+
+</div><!-- #app -->
+
+<!-- ══ MODAL GENÉRICO ══════════════════════════════════ -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Modal</h3>
+      <button class="modal-close" id="modal-close">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<script src="views/assets/js/app.js"></script>
+</body>
+</html>
