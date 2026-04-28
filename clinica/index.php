@@ -15,6 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/helpers/Response.php';
 require_once __DIR__ . '/helpers/Log.php';
+require_once __DIR__ . '/helpers/Email.php';
 require_once __DIR__ . '/middlewares/Auth.php';
 require_once __DIR__ . '/models/Models.php';
 require_once __DIR__ . '/controllers/Controllers.php';
@@ -49,11 +50,26 @@ set_exception_handler(function(Throwable $e) {
 if ($resource === 'auth') {
     $ctrl = new AuthController();
     match(true) {
-        $method === 'POST' && $action === 'login'            => $ctrl->login(),
-        $method === 'POST' && $action === 'logout'           => $ctrl->logout(),
-        $method === 'GET'  && $action === 'me'               => $ctrl->me(),
-        $method === 'POST' && $action === 'cambiar-password' => $ctrl->cambiarPassword(),
+        $method === 'POST' && $action === 'login'              => $ctrl->login(),
+        $method === 'POST' && $action === 'logout'             => $ctrl->logout(),
+        $method === 'GET'  && $action === 'me'                 => $ctrl->me(),
+        $method === 'POST' && $action === 'cambiar-password'   => $ctrl->cambiarPassword(),
+        $method === 'POST' && $action === 'recuperar-password' => $ctrl->recuperarPassword(),
+        $method === 'POST' && $action === 'reset-password'     => $ctrl->resetPassword(),
         default => Response::error('Ruta auth no encontrada', 404),
+    };
+    exit;
+}
+
+// ── USUARIOS / STAFF ──────────────────────────────────────────────────
+if ($resource === 'usuarios') {
+    Auth::verificar();
+    $ctrl = new UsuarioController();
+    match(true) {
+        $method === 'GET'    && $action === 'recepcionistas' => $ctrl->indexRecepcionistas(),
+        $method === 'POST'   && $action === 'staff'          => $ctrl->storeStaff(),
+        $method === 'DELETE' && $id !== null                 => $ctrl->destroy($id),
+        default => Response::error('Ruta de usuarios no encontrada', 404),
     };
     exit;
 }
@@ -64,11 +80,11 @@ if ($resource === 'medicos') {
     $ctrl = new MedicoController();
     match(true) {
         $method === 'GET'    && $action === 'buscar'  => $ctrl->buscar(),
-        $method === 'GET'    && $id !== null           => $ctrl->show($id),
-        $method === 'GET'                              => $ctrl->index(),
-        $method === 'POST'                             => $ctrl->store(),
-        $method === 'PUT'    && $id !== null           => $ctrl->update($id),
-        $method === 'DELETE' && $id !== null           => $ctrl->destroy($id),
+        $method === 'GET'    && $id !== null          => $ctrl->show($id),
+        $method === 'GET'                             => $ctrl->index(),
+        $method === 'POST'                            => $ctrl->store(),
+        $method === 'PUT'    && $id !== null          => $ctrl->update($id),
+        $method === 'DELETE' && $id !== null          => $ctrl->destroy($id),
         default => Response::error('Ruta no encontrada', 404),
     };
     exit;
@@ -77,17 +93,17 @@ if ($resource === 'medicos') {
 // ── PACIENTES ─────────────────────────────────────────────────────────
 if ($resource === 'pacientes') {
     Auth::verificar();
-    $ctrl = new PacienteController();
-    // /pacientes/{id}/historial
+    $ctrl      = new PacienteController();
     $subaction = $parts[2] ?? null;
     match(true) {
-        $method === 'GET'    && $action === 'buscar'                  => $ctrl->buscar(),
+        $method === 'GET'    && $action === 'buscar'                     => $ctrl->buscar(),
         $method === 'GET'    && $id !== null && $subaction==='historial' => $ctrl->historial($id),
-        $method === 'GET'    && $id !== null                           => $ctrl->show($id),
-        $method === 'GET'                                              => $ctrl->index(),
-        $method === 'POST'                                             => $ctrl->store(),
-        $method === 'PUT'    && $id !== null                           => $ctrl->update($id),
-        $method === 'DELETE' && $id !== null                           => $ctrl->destroy($id),
+        $method === 'GET'    && $id !== null && $subaction==='cirugias'  => (new CirugiaController())->porPaciente($id),
+        $method === 'GET'    && $id !== null                             => $ctrl->show($id),
+        $method === 'GET'                                                => $ctrl->index(),
+        $method === 'POST'                                               => $ctrl->store(),
+        $method === 'PUT'    && $id !== null                             => $ctrl->update($id),
+        $method === 'DELETE' && $id !== null                             => $ctrl->destroy($id),
         default => Response::error('Ruta no encontrada', 404),
     };
     exit;
@@ -113,13 +129,14 @@ if ($resource === 'citas') {
 // ── CONSULTAS ─────────────────────────────────────────────────────────
 if ($resource === 'consultas') {
     Auth::verificar();
-    $ctrl = new ConsultaController();
+    $ctrl      = new ConsultaController();
     $subaction = $parts[2] ?? null;
     match(true) {
-        $method === 'GET'  && $id !== null && $subaction==='receta' => $ctrl->receta($id),
-        $method === 'GET'  && $id !== null                           => $ctrl->show($id),
-        $method === 'GET'                                            => $ctrl->index(),
-        $method === 'POST'                                           => $ctrl->store(),
+        $method === 'GET'  && $id !== null && $subaction==='receta'    => $ctrl->receta($id),
+        $method === 'GET'  && $id !== null && $subaction==='servicios' => (new ServicioController())->porConsulta($id),
+        $method === 'GET'  && $id !== null                             => $ctrl->show($id),
+        $method === 'GET'                                              => $ctrl->index(),
+        $method === 'POST'                                             => $ctrl->store(),
         default => Response::error('Ruta no encontrada', 404),
     };
     exit;
@@ -155,16 +172,47 @@ if ($resource === 'pagos') {
     exit;
 }
 
+// ── CIRUGÍAS ──────────────────────────────────────────────────────────
+if ($resource === 'cirugias') {
+    Auth::verificar();
+    $ctrl = new CirugiaController();
+    match(true) {
+        $method === 'GET'  => $ctrl->index(),
+        $method === 'POST' => $ctrl->store(),
+        $method === 'PUT'  && $id !== null => $ctrl->update($id),
+        default => Response::error('Ruta no encontrada', 404),
+    };
+    exit;
+}
+
+// ── SERVICIOS ADICIONALES ─────────────────────────────────────────────
+if ($resource === 'servicios') {
+    Auth::verificar();
+    $ctrl = new ServicioController();
+    match(true) {
+        $method === 'GET'  && $action === 'catalogo' => $ctrl->catalogo(),
+        $method === 'GET'  => $ctrl->index(),
+        $method === 'POST' => $ctrl->store(),
+        $method === 'PUT'  && $id !== null => $ctrl->update($id),
+        default => Response::error('Ruta no encontrada', 404),
+    };
+    exit;
+}
+
 // ── REPORTES ──────────────────────────────────────────────────────────
 if ($resource === 'reportes') {
     Auth::verificar();
     $ctrl = new ReporteController();
     match($action) {
-        'ingresos'              => $ctrl->ingresos(),
-        'pacientes-genero'      => $ctrl->pacientesPorGenero(),
-        'consultas-periodo'     => $ctrl->consultasPorPeriodo(),
-        'medicos-especialidad'  => $ctrl->medicosPorEspecialidad(),
-        'bitacora'              => $ctrl->bitacora(),
+        'ingresos'               => $ctrl->ingresos(),
+        'pacientes-genero'       => $ctrl->pacientesPorGenero(),
+        'consultas-periodo'      => $ctrl->consultasPorPeriodo(),
+        'medicos-especialidad'   => $ctrl->medicosPorEspecialidad(),
+        'bitacora'               => $ctrl->bitacora(),
+        'enfermedades-periodo'   => $ctrl->enfermedadesPorPeriodo(),
+        'inventario-completo'    => $ctrl->inventarioCompleto(),
+        'servicios-periodo'      => $ctrl->serviciosPorPeriodo(),
+        'notificaciones'         => $ctrl->notificaciones(),
         default => Response::error('Reporte no encontrado', 404),
     };
     exit;
@@ -194,6 +242,7 @@ if ($resource === '') {
         'version'  => '1.0.0',
         'endpoints'=> [
             'auth'         => ['POST /auth/login','POST /auth/logout','GET /auth/me','POST /auth/cambiar-password'],
+            'usuarios'     => ['GET /usuarios/recepcionistas', 'POST /usuarios/staff', 'DELETE /usuarios/{id}'],
             'medicos'      => ['GET','GET /{id}','POST','PUT /{id}','DELETE /{id}','GET /buscar?q='],
             'pacientes'    => ['GET','GET /{id}','POST','PUT /{id}','DELETE /{id}','GET /buscar?q=','GET /{id}/historial'],
             'citas'        => ['GET','GET /{id}','POST','PUT /{id}','DELETE /{id}','GET /hoy','GET /disponibilidad?medico_id=&fecha='],

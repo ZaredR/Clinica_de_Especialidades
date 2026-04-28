@@ -225,6 +225,56 @@ class PacienteModel {
         $s->execute([':id'=>$id]);
         return $s->fetchAll();
     }
+    public function misPacientes(int $id_usuario_medico): array {
+        $s = $this->db->prepare("
+            SELECT DISTINCT p.*, TIMESTAMPDIFF(YEAR, p.fecha_nacimiento, CURDATE()) AS edad
+            FROM pacientes p
+            JOIN citas c ON p.paciente_id = c.paciente_id
+            JOIN medicos m ON c.medico_id = m.medico_id
+            WHERE m.id_usuario = :uid AND p.activo = 1
+            ORDER BY p.apellidos
+        ");
+        $s->execute([':uid' => $id_usuario_medico]);
+        return $s->fetchAll();
+    }
+}
+// =====================================================================
+// MODELO: Usuarios (Staff / Recepción)
+// =====================================================================
+class UsuarioModel {
+    private PDO $db;
+    public function __construct() { $this->db = Database::getInstance()->getConnection(); }
+
+    public function crearStaff(array $d): int {
+        $s = $this->db->prepare("
+            INSERT INTO usuarios (username, contrasena, id_rol, activo) 
+            VALUES (:u, :p, :rol, 1)
+        ");
+        $s->execute([
+            ':u' => $d['username'],
+            ':p' => password_hash($d['password'], PASSWORD_BCRYPT),
+            ':rol' => $d['id_rol']
+        ]);
+        $id = (int)$this->db->lastInsertId();
+        Log::registrar('INSERT', 'usuarios', $id, 'Nuevo personal de recepción creado');
+        return $id;
+    }
+
+    public function todosRecepcionistas(): array {
+        return $this->db->query("
+            SELECT id_usuario, username, activo 
+            FROM usuarios 
+            WHERE id_rol = 2 
+            ORDER BY id_usuario DESC
+        ")->fetchAll();
+    }
+
+    public function bajaLogica(int $id): bool {
+        $s = $this->db->prepare("UPDATE usuarios SET activo = 0 WHERE id_usuario = :id");
+        $r = $s->execute([':id' => $id]);
+        if($r) Log::registrar('UPDATE', 'usuarios', $id, 'Baja lógica de recepcionista');
+        return $r;
+    }
 }
 
 // =====================================================================
@@ -347,20 +397,22 @@ class ConsultaModel {
     }
 
     public function crear(array $d): int {
-        $db = Database::getInstance();
-        $db->beginTransaction();
-        try {
-            $s = $this->db->prepare("
-                CALL sp_registrar_consulta(:cita,:med,:pac,:tipo,:cons,:dx,:obs,@out_id)
-            ");
-            $s->execute([
-                ':cita'=>$d['cita_id']??null,':med'=>$d['medico_id'],
-                ':pac'=>$d['paciente_id'],':tipo'=>$d['id_tipo_consulta']??null,
-                ':cons'=>$d['id_consultorio']??null,
-                ':dx'=>$d['diagnostico']??null,':obs'=>$d['observaciones']??null
-            ]);
-            $id = (int)$this->db->query("SELECT @out_id")->fetchColumn();
+        // sp_registrar_consulta manages its own transaction internally;
+        // calling beginTransaction() here would cause "no active transaction" on commit.
+        $s = $this->db->prepare("
+            CALL sp_registrar_consulta(:cita,:med,:pac,:tipo,:cons,:dx,:obs,@out_id)
+        ");
+        $s->execute([
+            ':cita'=>$d['cita_id']??null,':med'=>$d['medico_id'],
+            ':pac'=>$d['paciente_id'],':tipo'=>$d['id_tipo_consulta']??null,
+            ':cons'=>$d['id_consultorio']??null,
+            ':dx'=>$d['diagnostico']??null,':obs'=>$d['observaciones']??null
+        ]);
+        $id = (int)$this->db->query("SELECT @out_id")->fetchColumn();
 
+        // Wrap post-SP inserts in a separate transaction
+        $this->db->beginTransaction();
+        try {
             // Receta si viene con medicamentos
             if(!empty($d['medicamentos'])) {
                 $sr = $this->db->prepare("INSERT INTO recetas(id_consulta) VALUES(:ic)");
@@ -375,16 +427,29 @@ class ConsultaModel {
                 }
             }
 
-            // Crear pago automático
+            // Servicios adicionales vinculados a la consulta
+            if (!empty($d['servicios'])) {
+                $srvModel = new ServicioModel();
+                $srvModel->agregarAConsulta($id, $d['servicios']);
+            }
+
+            // Crear pago automático (precio consulta + servicios)
             $precioQ = $this->db->prepare("SELECT precio FROM tipo_consulta WHERE id_tipo_consulta=:t");
             $precioQ->execute([':t'=>$d['id_tipo_consulta']??null]);
-            $precio = $precioQ->fetchColumn() ?: 350;
+            $precio = (float)($precioQ->fetchColumn() ?: 350);
+            if (!empty($d['servicios'])) {
+                foreach ($d['servicios'] as $srv) {
+                    $ps = $this->db->prepare("SELECT precio FROM servicios_adicionales WHERE id_servicio=:id AND activo=1");
+                    $ps->execute([':id' => $srv['id_servicio']]);
+                    $precio += (float)($ps->fetchColumn() ?: 0);
+                }
+            }
             $sp = $this->db->prepare("INSERT INTO pagos(id_consulta,monto_total,estado) VALUES(:ic,:mt,'pendiente')");
             $sp->execute([':ic'=>$id,':mt'=>$precio]);
 
-            $db->commit();
+            $this->db->commit();
             return $id;
-        } catch(Throwable $e) { $db->rollback(); throw $e; }
+        } catch(Throwable $e) { $this->db->rollBack(); throw $e; }
     }
 
     public function receta(int $id_consulta): array|false {
@@ -552,6 +617,166 @@ class ReporteModel {
         $s = $this->db->prepare("SELECT * FROM bitacora ORDER BY fecha_hora DESC LIMIT :l");
         $s->bindValue(':l',$limit,PDO::PARAM_INT);
         $s->execute();
+        return $s->fetchAll();
+    }
+
+    public function enfermedadesPorPeriodo(string $desde, string $hasta): array {
+        $s = $this->db->prepare("
+            SELECT co.diagnostico, COUNT(*) AS total, e.especialidad
+            FROM consultas co
+            JOIN medicos m ON co.medico_id = m.medico_id
+            JOIN especialidades e ON m.especialidad_id = e.especialidad_id
+            WHERE DATE(co.fecha) BETWEEN :d AND :h
+              AND co.diagnostico IS NOT NULL AND co.diagnostico <> ''
+            GROUP BY co.diagnostico, e.especialidad
+            ORDER BY total DESC
+            LIMIT 50
+        ");
+        $s->execute([':d' => $desde, ':h' => $hasta]);
+        return $s->fetchAll();
+    }
+
+    public function inventarioCompleto(): array {
+        return $this->db->query(
+            "SELECT * FROM v_inventario_detalle ORDER BY estado_caducidad DESC, medicamento"
+        )->fetchAll();
+    }
+}
+
+// =====================================================================
+// MODELO: Cirugías
+// =====================================================================
+class CirugiaModel {
+    private PDO $db;
+    public function __construct() { $this->db = Database::getInstance()->getConnection(); }
+
+    public function todas(array $filtros = []): array {
+        $where  = ['1=1'];
+        $params = [];
+        if (!empty($filtros['paciente_id'])) { $where[] = 'c.paciente_id=:pid'; $params[':pid'] = $filtros['paciente_id']; }
+        if (!empty($filtros['estado']))       { $where[] = 'c.estado=:est';       $params[':est'] = $filtros['estado']; }
+        $sql = "SELECT c.*,
+                       CONCAT(p.nombre,' ',p.apellidos) AS paciente,
+                       CONCAT(m.nombre,' ',m.apellidos) AS medico
+                FROM cirugias c
+                JOIN pacientes p ON c.paciente_id = p.paciente_id
+                JOIN medicos   m ON c.medico_id   = m.medico_id
+                WHERE " . implode(' AND ', $where) . " ORDER BY c.fecha DESC";
+        $s = $this->db->prepare($sql);
+        $s->execute($params);
+        return $s->fetchAll();
+    }
+
+    public function porPaciente(int $paciente_id): array {
+        return $this->todas(['paciente_id' => $paciente_id]);
+    }
+
+    public function crear(array $d): int {
+        $s = $this->db->prepare("
+            INSERT INTO cirugias(paciente_id, medico_id, id_consultorio, fecha,
+                                 tipo_cirugia, descripcion, resultado, estado, observaciones)
+            VALUES(:pid, :mid, :cons, :fecha, :tipo, :desc, :res, :est, :obs)
+        ");
+        $s->execute([
+            ':pid'   => $d['paciente_id'],
+            ':mid'   => $d['medico_id'],
+            ':cons'  => $d['id_consultorio'] ?? null,
+            ':fecha' => $d['fecha'],
+            ':tipo'  => $d['tipo_cirugia'],
+            ':desc'  => $d['descripcion'] ?? null,
+            ':res'   => $d['resultado'] ?? null,
+            ':est'   => $d['estado'] ?? 'programada',
+            ':obs'   => $d['observaciones'] ?? null,
+        ]);
+        $id = (int)$this->db->lastInsertId();
+        Log::registrar('INSERT', 'cirugias', $id, 'Cirugía registrada: ' . $d['tipo_cirugia']);
+        return $id;
+    }
+
+    public function actualizar(int $id, array $d): bool {
+        $s = $this->db->prepare("
+            UPDATE cirugias SET medico_id=:mid, id_consultorio=:cons, fecha=:fecha,
+            tipo_cirugia=:tipo, descripcion=:desc, resultado=:res, estado=:est, observaciones=:obs
+            WHERE id_cirugia=:id
+        ");
+        $r = $s->execute([
+            ':mid'  => $d['medico_id'],
+            ':cons' => $d['id_consultorio'] ?? null,
+            ':fecha'=> $d['fecha'],
+            ':tipo' => $d['tipo_cirugia'],
+            ':desc' => $d['descripcion'] ?? null,
+            ':res'  => $d['resultado'] ?? null,
+            ':est'  => $d['estado'],
+            ':obs'  => $d['observaciones'] ?? null,
+            ':id'   => $id,
+        ]);
+        if ($r) Log::registrar('UPDATE', 'cirugias', $id, 'Cirugía actualizada: estado=' . $d['estado']);
+        return $r;
+    }
+}
+
+// =====================================================================
+// MODELO: Servicios Adicionales
+// =====================================================================
+class ServicioModel {
+    private PDO $db;
+    public function __construct() { $this->db = Database::getInstance()->getConnection(); }
+
+    public function catalogo(): array {
+        return $this->db->query("SELECT * FROM servicios_adicionales WHERE activo=1 ORDER BY nombre")->fetchAll();
+    }
+
+    public function todos(): array {
+        return $this->db->query("SELECT * FROM servicios_adicionales ORDER BY nombre")->fetchAll();
+    }
+
+    public function crear(array $d): int {
+        $s = $this->db->prepare("INSERT INTO servicios_adicionales(nombre,descripcion,precio) VALUES(:n,:d,:p)");
+        $s->execute([':n'=>$d['nombre'],':d'=>$d['descripcion']??null,':p'=>$d['precio']??0]);
+        $id = (int)$this->db->lastInsertId();
+        Log::registrar('INSERT', 'servicios_adicionales', $id, 'Servicio creado: ' . $d['nombre']);
+        return $id;
+    }
+
+    public function actualizar(int $id, array $d): bool {
+        $s = $this->db->prepare("
+            UPDATE servicios_adicionales SET nombre=:n,descripcion=:d,precio=:p,activo=:a WHERE id_servicio=:id
+        ");
+        return $s->execute([':n'=>$d['nombre'],':d'=>$d['descripcion']??null,':p'=>$d['precio'],':a'=>$d['activo']??1,':id'=>$id]);
+    }
+
+    public function porConsulta(int $id_consulta): array {
+        $s = $this->db->prepare("
+            SELECT cs.*, sa.nombre, sa.precio, sa.descripcion AS descripcion_servicio
+            FROM consulta_servicios cs
+            JOIN servicios_adicionales sa ON cs.id_servicio = sa.id_servicio
+            WHERE cs.id_consulta = :ic
+        ");
+        $s->execute([':ic' => $id_consulta]);
+        return $s->fetchAll();
+    }
+
+    public function agregarAConsulta(int $id_consulta, array $servicios): void {
+        $s = $this->db->prepare("
+            INSERT INTO consulta_servicios(id_consulta, id_servicio, observaciones)
+            VALUES(:ic, :is, :obs)
+        ");
+        foreach ($servicios as $srv) {
+            $s->execute([':ic' => $id_consulta, ':is' => $srv['id_servicio'], ':obs' => $srv['observaciones'] ?? null]);
+        }
+    }
+
+    public function porPeriodo(string $desde, string $hasta): array {
+        $s = $this->db->prepare("
+            SELECT sa.nombre, COUNT(*) AS total, SUM(sa.precio) AS ingresos
+            FROM consulta_servicios cs
+            JOIN servicios_adicionales sa ON cs.id_servicio = sa.id_servicio
+            JOIN consultas co ON cs.id_consulta = co.id_consulta
+            WHERE DATE(co.fecha) BETWEEN :d AND :h
+            GROUP BY sa.id_servicio, sa.nombre
+            ORDER BY total DESC
+        ");
+        $s->execute([':d' => $desde, ':h' => $hasta]);
         return $s->fetchAll();
     }
 }

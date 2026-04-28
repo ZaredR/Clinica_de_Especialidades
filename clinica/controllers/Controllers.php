@@ -42,6 +42,59 @@ class AuthController {
         Log::registrar('UPDATE','usuarios',$uid,'Cambio de contraseña');
         Response::success(null, 200, 'Contraseña actualizada');
     }
+
+    public function recuperarPassword(): void {
+        $d = json_decode(file_get_contents('php://input'), true) ?? [];
+        if (empty($d['username'])) Response::error('Usuario requerido');
+
+        $db = Database::getInstance()->getConnection();
+        $s  = $db->prepare("
+            SELECT u.id_usuario, u.username,
+                   COALESCE(m.correo, p.correo) AS correo
+            FROM usuarios u
+            LEFT JOIN medicos   m ON u.id_usuario = m.id_usuario
+            LEFT JOIN pacientes p ON u.id_usuario = p.id_usuario
+            WHERE u.username = :u AND u.activo = 1
+        ");
+        $s->execute([':u' => $d['username']]);
+        $user = $s->fetch();
+
+        // Siempre responde éxito para no revelar si el usuario existe
+        if (!$user || empty($user['correo'])) {
+            Response::success(null, 200, 'Si el usuario existe y tiene correo registrado, recibirá instrucciones');
+            return;
+        }
+
+        $token = bin2hex(random_bytes(32));
+        $db->prepare("INSERT INTO password_resets(id_usuario, token) VALUES(:uid, :tok)")
+           ->execute([':uid' => $user['id_usuario'], ':tok' => $token]);
+
+        Email::resetPassword($user['correo'], $user['username'], $token);
+        Log::registrar('INSERT', 'password_resets', $user['id_usuario'], 'Solicitud de recuperación de contraseña');
+        Response::success(['token_registrado' => true], 200, 'Token enviado al correo registrado');
+    }
+
+    public function resetPassword(): void {
+        $d = json_decode(file_get_contents('php://input'), true) ?? [];
+        if (empty($d['token']) || empty($d['password_nueva'])) Response::error('Token y nueva contraseña requeridos');
+
+        $db = Database::getInstance()->getConnection();
+        $s  = $db->prepare("
+            SELECT id_usuario FROM password_resets
+            WHERE token=:tok AND usado=0 AND creado_en >= DATE_SUB(NOW(), INTERVAL 1 HOUR)
+        ");
+        $s->execute([':tok' => $d['token']]);
+        $row = $s->fetch();
+        if (!$row) Response::error('Token inválido o expirado', 400);
+
+        $db->prepare("UPDATE usuarios SET contrasena=:p WHERE id_usuario=:id")
+           ->execute([':p' => password_hash($d['password_nueva'], PASSWORD_BCRYPT), ':id' => $row['id_usuario']]);
+        $db->prepare("UPDATE password_resets SET usado=1 WHERE token=:tok")
+           ->execute([':tok' => $d['token']]);
+
+        Log::registrar('UPDATE', 'usuarios', $row['id_usuario'], 'Contraseña restablecida vía token de recuperación');
+        Response::success(null, 200, 'Contraseña actualizada correctamente');
+    }
 }
 
 // =====================================================================
@@ -92,11 +145,17 @@ class PacienteController {
     private PacienteModel $model;
     public function __construct() { $this->model = new PacienteModel(); }
 
-    public function index(): void { Response::success($this->model->todos()); }
-    public function show(int $id): void {
-        $p = $this->model->porId($id);
-        $p ? Response::success($p) : Response::error('Paciente no encontrado', 404);
+public function index(): void { 
+    $usuario = Auth::usuario();
+    
+    if ($usuario['rol'] === 'medico') {
+        // Si es médico, solo devolvemos SUS pacientes
+        Response::success($this->model->misPacientes($usuario['id_usuario']));
+    } else {
+        // Administradores y recepción ven a todos
+        Response::success($this->model->todos()); 
     }
+}
     public function store(): void {
         Auth::requiereRol(['administrador','recepcionista']);
         $d = json_decode(file_get_contents('php://input'), true) ?? [];
@@ -126,7 +185,41 @@ class PacienteController {
         Response::success($this->model->historialCitas($id));
     }
 }
+// =====================================================================
+// CONTROLADOR: Usuarios
+// =====================================================================
+class UsuarioController {
+    private UsuarioModel $model;
+    public function __construct() { $this->model = new UsuarioModel(); }
 
+    public function indexRecepcionistas(): void {
+        Auth::requiereRol(['administrador']);
+        Response::success($this->model->todosRecepcionistas());
+    }
+
+    public function storeStaff(): void {
+        Auth::requiereRol(['administrador']);
+        $d = json_decode(file_get_contents('php://input'), true) ?? [];
+        
+        if (empty($d['username']) || empty($d['password'])) {
+            Response::error('El usuario y la contraseña son obligatorios');
+        }
+
+        try {
+            $d['id_rol'] = 2; // ID fijo para recepcionista
+            $id = $this->model->crearStaff($d);
+            Response::created(['id_usuario' => $id], 'Recepcionista creada con éxito');
+        } catch (Throwable $e) {
+            Response::error('Error al crear usuario: ' . $e->getMessage());
+        }
+    }
+
+    public function destroy(int $id): void {
+        Auth::requiereRol(['administrador']);
+        $this->model->bajaLogica($id);
+        Response::success(null, 200, 'Baja exitosa');
+    }
+}
 // =====================================================================
 // CONTROLADOR: Citas
 // =====================================================================
@@ -135,7 +228,16 @@ class CitaController {
     public function __construct() { $this->model = new CitaModel(); }
 
     public function index(): void {
-        $f = ['fecha'=>$_GET['fecha']??null,'medico_id'=>$_GET['medico_id']??null,'estado'=>$_GET['estado']??null];
+        $user = Auth::usuario();
+        // Doctors always see only their own appointments
+        $medico_id = ($user['rol'] === 'Médico' || $user['rol'] === 'medico')
+            ? ($user['medico_id'] ?? $_GET['medico_id'] ?? null)
+            : ($_GET['medico_id'] ?? null);
+        $f = [
+            'fecha'     => $_GET['fecha']  ?? null,
+            'medico_id' => $medico_id,
+            'estado'    => $_GET['estado'] ?? null,
+        ];
         Response::success($this->model->todas(array_filter($f)));
     }
     public function show(int $id): void {
@@ -157,6 +259,25 @@ class CitaController {
         if (!empty($d['estado'])) {
             try {
                 $this->model->cambiarEstado($id, $d['estado']);
+
+                // Notificación por correo al paciente si tiene correo registrado
+                $cita = $this->model->porId($id);
+                if ($cita) {
+                    $db = Database::getInstance()->getConnection();
+                    $s  = $db->prepare("SELECT correo FROM pacientes WHERE paciente_id=:pid");
+                    $s->execute([':pid' => $cita['paciente_id']]);
+                    $correo = $s->fetchColumn();
+                    if ($correo) {
+                        $info = array_merge((array)$cita, ['correo' => $correo, 'cita_id' => $id]);
+                        match($d['estado']) {
+                            'confirmada'   => Email::citaConfirmada($info),
+                            'cancelada'    => Email::citaCancelada($info),
+                            'reprogramada' => Email::citaReprogramada($info),
+                            default        => null,
+                        };
+                    }
+                }
+
                 Response::success(null, 200, 'Estado actualizado');
             } catch (Throwable $e) { Response::error($e->getMessage()); }
         }
@@ -289,6 +410,101 @@ class ReporteController {
         Auth::requiereRol(['administrador']);
         $limit = (int)($_GET['limit'] ?? 100);
         Response::success($this->model->bitacora($limit));
+    }
+
+    public function enfermedadesPorPeriodo(): void {
+        $desde = $_GET['desde'] ?? date('Y-m-01');
+        $hasta = $_GET['hasta'] ?? date('Y-m-d');
+        Response::success($this->model->enfermedadesPorPeriodo($desde, $hasta));
+    }
+
+    public function inventarioCompleto(): void {
+        Response::success($this->model->inventarioCompleto());
+    }
+
+    public function serviciosPorPeriodo(): void {
+        $desde = $_GET['desde'] ?? date('Y-m-01');
+        $hasta = $_GET['hasta'] ?? date('Y-m-d');
+        Response::success((new ServicioModel())->porPeriodo($desde, $hasta));
+    }
+
+    public function notificaciones(): void {
+        Auth::requiereRol(['administrador']);
+        $limit = (int)($_GET['limit'] ?? 50);
+        $s = Database::getInstance()->getConnection()->prepare(
+            "SELECT * FROM notificaciones ORDER BY fecha_creacion DESC LIMIT :l"
+        );
+        $s->bindValue(':l', $limit, PDO::PARAM_INT);
+        $s->execute();
+        Response::success($s->fetchAll());
+    }
+}
+
+// =====================================================================
+// CONTROLADOR: Cirugías
+// =====================================================================
+class CirugiaController {
+    private CirugiaModel $model;
+    public function __construct() { $this->model = new CirugiaModel(); }
+
+    public function index(): void {
+        $filtros = array_filter([
+            'paciente_id' => $_GET['paciente_id'] ?? null,
+            'estado'      => $_GET['estado'] ?? null,
+        ]);
+        Response::success($this->model->todas($filtros));
+    }
+
+    public function porPaciente(int $paciente_id): void {
+        Response::success($this->model->porPaciente($paciente_id));
+    }
+
+    public function store(): void {
+        Auth::requiereRol(['administrador','recepcionista','medico']);
+        $d = json_decode(file_get_contents('php://input'), true) ?? [];
+        foreach (['paciente_id','medico_id','fecha','tipo_cirugia'] as $r)
+            if (empty($d[$r])) Response::error("Campo requerido: $r");
+        try {
+            $id = $this->model->crear($d);
+            Response::created(['id_cirugia' => $id]);
+        } catch (Throwable $e) { Response::error($e->getMessage()); }
+    }
+
+    public function update(int $id): void {
+        Auth::requiereRol(['administrador','recepcionista','medico']);
+        $d = json_decode(file_get_contents('php://input'), true) ?? [];
+        $this->model->actualizar($id, $d);
+        Response::success(null, 200, 'Cirugía actualizada');
+    }
+}
+
+// =====================================================================
+// CONTROLADOR: Servicios Adicionales
+// =====================================================================
+class ServicioController {
+    private ServicioModel $model;
+    public function __construct() { $this->model = new ServicioModel(); }
+
+    public function index(): void   { Response::success($this->model->todos()); }
+    public function catalogo(): void { Response::success($this->model->catalogo()); }
+
+    public function store(): void {
+        Auth::requiereRol(['administrador']);
+        $d = json_decode(file_get_contents('php://input'), true) ?? [];
+        if (empty($d['nombre'])) Response::error('Nombre requerido');
+        $id = $this->model->crear($d);
+        Response::created(['id_servicio' => $id]);
+    }
+
+    public function update(int $id): void {
+        Auth::requiereRol(['administrador']);
+        $d = json_decode(file_get_contents('php://input'), true) ?? [];
+        $this->model->actualizar($id, $d);
+        Response::success(null, 200, 'Servicio actualizado');
+    }
+
+    public function porConsulta(int $id): void {
+        Response::success($this->model->porConsulta($id));
     }
 }
 

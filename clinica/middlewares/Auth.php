@@ -24,6 +24,7 @@ class Auth {
             'username'   => $_SESSION['username']   ?? null,
             'rol'        => $_SESSION['rol']        ?? null,
             'rol_id'     => $_SESSION['rol_id']     ?? null,
+            'medico_id'  => $_SESSION['medico_id']  ?? null,
         ];
     }
 
@@ -51,12 +52,22 @@ class Auth {
         $_SESSION['rol']        = $user['rol'];
         $_SESSION['rol_id']     = $user['id_rol'];
 
+        // Store medico_id in session if the user is a doctor
+        $medico_id = null;
+        if ($user['rol'] === 'medico') {
+            $sm = $db->prepare("SELECT medico_id FROM medicos WHERE id_usuario=:uid AND activo=1");
+            $sm->execute([':uid' => $user['id_usuario']]);
+            $medico_id = $sm->fetchColumn() ?: null;
+            $_SESSION['medico_id'] = $medico_id;
+        }
+
         Log::registrar('LOGIN', 'usuarios', $user['id_usuario'], 'Inicio de sesión');
 
         return [
             'id_usuario' => $user['id_usuario'],
             'username'   => $user['username'],
             'rol'        => $user['rol'],
+            'medico_id'  => $medico_id,
         ];
     }
 
